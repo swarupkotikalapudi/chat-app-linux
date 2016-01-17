@@ -12,7 +12,7 @@
 #include<sstream>
 
 /*
-  This class reprsents a command interface which can be used to send a command to client or server..
+  This class reprsents a command interface which can be used to send a command to client or server...
 */
 
 cChatEvtCmd::evtCmdFuncPtrTable cChatEvtCmd::evtCmdTable[chatevtcmd_namespace::CMD_TABLE_ENTRIES] = {
