@@ -1,0 +1,205 @@
+#include "cSharedMem.h"
+#include<iostream>
+//#include <sys/stat.h> /* Defines mode constants */
+#include <sys/mman.h>
+
+#include<string.h>
+
+using namespace std;
+
+
+
+cSharedMem::cSharedMem(int iClientConnCount, const char* pSharedMemName): m_fd(-1),m_pSharedMemoryName(pSharedMemName),m_pShareStartAddress(nullptr)
+{
+  m_iClientConnectionSupported = ( iClientConnCount > 0 ? iClientConnCount : 0);  
+  m_sharedMemSize = sizeof(int *) + (iClientConnCount * ( sizeof(int *) * 3 ) );
+}
+
+
+
+cSharedMem::~cSharedMem()
+{
+  if(m_fd > 0)  {
+    shm_unlink( m_pSharedMemoryName );
+  }
+}
+
+
+
+int cSharedMem::sharedMem_Open()
+{
+  int flags     = O_RDWR | O_CREAT;
+  mode_t perms  = S_IRUSR | S_IWUSR;
+  
+  if(m_fd > 0)  {
+    shm_unlink( m_pSharedMemoryName );
+    m_fd = -1;
+  }
+  
+  if( ( m_fd = shm_open(m_pSharedMemoryName, flags, perms) ) == -1)  {    
+    return -1;
+  }
+  
+  if (ftruncate(m_fd, m_sharedMemSize) == -1)  {    
+    return -1;
+  }
+  
+  /* Map shared memory object */
+  m_pShareStartAddress = mmap(NULL, m_sharedMemSize, PROT_READ | PROT_WRITE, MAP_SHARED, m_fd, 0);
+  if (m_pShareStartAddress == MAP_FAILED) {   
+    return -1;
+  }
+  
+  memset(m_pShareStartAddress, 0, m_sharedMemSize );
+  
+  return 0;
+}
+
+
+
+int cSharedMem::sharedMem_Close()
+{
+  shm_unlink( m_pSharedMemoryName ) ;
+  m_fd = -1;
+   
+  return 0;
+}
+
+
+
+int cSharedMem::sharedMem_UpdateClient(pid_t iProcessID, unsigned int iTx, unsigned int iRx)
+{
+  int* ptr = (int *) m_pShareStartAddress;
+  int i = m_iClientConnectionSupported;
+  int iRet = -1;
+  
+  if(*ptr  <= 0)  {   
+    return -1;
+  }
+  
+  ptr++; /* move to client related first record */
+   
+  while(i)  {
+    if( *ptr == (int) iProcessID  )  {
+      ptr++;    /* move to tx entry of the process */
+      *ptr++ += iTx;
+      *ptr   += iRx;
+      iRet   = 0;
+      break;
+    }
+    
+    i--;
+    ptr = ptr + 3;
+  }
+    
+  return iRet;
+}
+
+
+
+int cSharedMem::sharedMem_addClient(pid_t iProcessID)
+{
+  int i    = m_iClientConnectionSupported, iRet = -1;
+  int* ptr = (int *) m_pShareStartAddress; /* First four/eight byte will have count of number of clients currently active.. */  
+    
+  if(*ptr == m_iClientConnectionSupported)  {  
+    return -1;
+  }
+  else  {
+    ++*ptr++;
+    //ptr++; /* move to client related first record */
+  }
+  
+  while(i)  {
+    if(! *ptr )  {
+      *ptr = (int) iProcessID;       
+      memset(ptr + 1, 0, sizeof(int *) * 2);      
+      iRet = 0;
+      break;
+    }        
+    
+    ptr = ptr + 3;
+    i--;
+  }
+   
+  return iRet;
+}
+
+
+
+int cSharedMem::sharedMem_removeClient(pid_t iProcessID)
+{
+  int* ptr = (int *) m_pShareStartAddress;
+  int i = m_iClientConnectionSupported;
+  int iRet = -1;
+  
+  if(*ptr  <= 0)  {
+    return -1;
+  }
+  else  {
+    //(*ptr)--;
+    //ptr++; /* move to client related first record */
+    --*ptr++;
+  }
+  
+  while(i)  {
+    if( *ptr == (int) iProcessID )  {
+      //*ptr++ = 0; /* process id is set to zero */
+      //*ptr++ = 0; /* tx count set to zero */
+      //*ptr   = 0; /* rx count set to zero */
+      memset(ptr, 0, sizeof(int *) * 3);
+      
+      iRet =  0;
+      break;
+    }
+    
+    i--;
+    ptr = ptr + 3;
+  }
+    
+  return iRet;
+}
+
+
+
+int cSharedMem::sharedMem_removeAllClient()
+{
+  int* ptr  = (int *) m_pShareStartAddress;
+  memset(ptr, 0, m_sharedMemSize );
+  
+  return 0;
+}
+
+
+
+int cSharedMem::sharedMem_printClientStats()
+{  
+  int* ptr = (int *) m_pShareStartAddress;
+  int i = m_iClientConnectionSupported;
+  int j = 1;
+  
+  if(*ptr  <= 0)
+  {
+    cout << endl  <<  "There is no client connected. " << endl;
+    return 0;
+  }
+  
+  ptr++; /* move to client related first record */
+  
+  while(i)  {
+    if(*ptr)  {
+      cout  << "--" ;
+      cout  << endl << "Client Connection [ " << j++ << " ] : " << *ptr++ << endl;
+      cout  << "Byte sent (Tx)     : "     << ( (*ptr++) >> 3 )   << endl; /* divide by 8 to get bytes */
+      cout  << "Byte Received (Rx) : " << (*ptr >> 3)     << endl;        /* divide by 8 to get bytes */ 
+      ptr++; /* move to next process id */
+    }
+    else  {
+      ptr = ptr + 3; /* move to next process id */
+      i--;
+    }
+  }
+    
+  return 0;
+}
+

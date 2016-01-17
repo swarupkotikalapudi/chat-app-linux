@@ -1,0 +1,34 @@
+#ifndef _CSHAREDMEM_H
+#define _CSHAREDMEM_H
+
+#include <fcntl.h>    /* Defines O_* constants */
+
+class cSharedMem
+{
+  int     m_iClientConnectionSupported;
+  int     m_fd;
+  size_t  m_sharedMemSize;
+  const char*   m_pSharedMemoryName;
+  void*   m_pShareStartAddress;
+  
+  cSharedMem(const cSharedMem&);
+  cSharedMem& operator=(const cSharedMem&);
+  
+protected:
+
+public:
+  cSharedMem(int  iClientConnCount, const char* pSharedMemName);
+  ~cSharedMem();
+  
+  int sharedMem_Open();
+  int sharedMem_Close();
+  
+  int sharedMem_UpdateClient(pid_t iProcessID, unsigned int iTx, unsigned int iRx);
+  int sharedMem_addClient(pid_t iProcessID);
+  int sharedMem_removeClient(pid_t iProcessID);
+  int sharedMem_printClientStats();
+  
+};
+
+
+#endif
